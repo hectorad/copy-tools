@@ -1,0 +1,42 @@
+# The init container copies /tools from the copy-tools image into an emptyDir;
+# the app (a distroless image with no shell or tools) then runs them from /opt/tools.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tools-demo
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  initContainers:
+    - name: copy-tools
+      image: copy-tools:dev
+      args: ["/tools", "/opt/tools"]
+      terminationMessagePolicy: FallbackToLogsOnError # copy errors show up in `kubectl describe pod`
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      volumeMounts:
+        - name: tools
+          mountPath: /opt/tools
+  containers:
+    - name: app
+      image: gcr.io/distroless/static-debian13:nonroot
+      command: ["/opt/tools/busybox", "sh", "-c", "/opt/tools/busybox ls -l /opt/tools && exec /opt/tools/busybox sleep 3600"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      volumeMounts:
+        - name: tools
+          mountPath: /opt/tools
+          readOnly: true # the app can run the tools but not tamper with them
+  volumes:
+    - name: tools
+      emptyDir: {}
