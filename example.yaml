@@ -1,5 +1,9 @@
-# The init container copies /tools from the copy-tools image into an emptyDir;
-# the app (a distroless image with no shell or tools) then runs them from /opt/tools.
+# The app (a distroless image with no shell or tools) mounts the copy-tools image
+# read-only at /opt/tools and runs the binaries in place.
+#
+# Needs image volumes: on by default from Kubernetes 1.35 (1.33 and 1.34 need the
+# ImageVolume feature gate), and a container runtime that supports them. containerd
+# does; the Docker runtime does not.
 apiVersion: v1
 kind: Pod
 metadata:
@@ -11,19 +15,6 @@ spec:
     runAsGroup: 65532
     seccompProfile:
       type: RuntimeDefault
-  initContainers:
-    - name: copy-tools
-      image: copy-tools:dev
-      args: ["/tools", "/opt/tools"]
-      terminationMessagePolicy: FallbackToLogsOnError # copy errors show up in `kubectl describe pod`
-      securityContext:
-        allowPrivilegeEscalation: false
-        readOnlyRootFilesystem: true
-        capabilities:
-          drop: ["ALL"]
-      volumeMounts:
-        - name: tools
-          mountPath: /opt/tools
   containers:
     - name: app
       image: gcr.io/distroless/static-debian13:nonroot
@@ -36,7 +27,8 @@ spec:
       volumeMounts:
         - name: tools
           mountPath: /opt/tools
-          readOnly: true # the app can run the tools but not tamper with them
   volumes:
     - name: tools
-      emptyDir: {}
+      image:
+        reference: copy-tools:dev
+        pullPolicy: IfNotPresent
